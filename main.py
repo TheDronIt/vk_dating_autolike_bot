@@ -1,3 +1,8 @@
+from time import sleep
+import os
+import random
+import json
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -5,19 +10,19 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-from time import sleep
-import os
-import random
-import json
-
+from bs4 import BeautifulSoup
 
 class Autolike_vk:
 
     def __init__(self):
+        self.JSON_FILE = 'stats.json'
+        self.SHOW_CURRENT_STATISTIC = True
 
+        # Проверка на наличие авторизованного профиля
         self.profile_path = os.path.abspath("Profile")
         self._check_and_create_profile()
 
+        # Настройка опций браузера-эмулятора
         self.browser_options = webdriver.ChromeOptions()
         self.browser_options.add_argument('--allow-profiles-outside-user-dir')
         self.browser_options.add_argument('--enable-profile-shortcut-manager')
@@ -33,25 +38,11 @@ class Autolike_vk:
         # self.browser_options.add_argument("--no-sandbox")
 
         self.service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=self.service, options=self.browser_options)
+        self.driver = webdriver.Chrome(
+            service=self.service,
+            options=self.browser_options
+        )
  
-        # Счетчики статистики
-        # self.total_counter = 0
-        # self.like_counter = 0
-        # self.dislike_counter = 0
-
-        self.JSON_FILE = 'stats.json'
-        self.SHOW_CURRENT_STATISTIC = True
-
-        # self.stats = {
-        #     "total_profile": 0,
-        #     "total_like": 0,
-        #     "total_dislike": 0,
-        #     "session_profile": 0,
-        #     "session_like": 0,
-        #     "session_dislike": 0
-        # }
-
         # Проверка наличия файла JSON и его чтение
         if os.path.exists(self.JSON_FILE):
             with open(self.JSON_FILE, 'r') as file:
@@ -61,8 +52,6 @@ class Autolike_vk:
         self.stats["session_like"] = 0 
         self.stats["session_dislike"] = 0
         
-
-
         self.driver.get("https://vk.com/dating")
         WebDriverWait(self.driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "iframe"))
@@ -76,7 +65,9 @@ class Autolike_vk:
         if not os.path.exists(self.profile_path):
             print("Папка Profile не найдена. Создаем новый профиль...")
             os.makedirs(self.profile_path)
-            temp_driver = webdriver.Chrome(executable_path=ChromeDriverManager().install())
+            temp_driver = webdriver.Chrome(
+                executable_path=ChromeDriverManager().install()
+            )
             temp_driver.get("chrome://settings/")
             sleep(3)
             temp_driver.quit()
@@ -84,8 +75,12 @@ class Autolike_vk:
 
     def _check_like_disslike_button(self):
         try:
-            self.like_button = self.driver.find_element(By.CSS_SELECTOR, 'div[data-testid="like"]')
-            self.dislike_button = self.driver.find_element(By.CSS_SELECTOR, 'div[data-testid="dislike"]')
+            self.like_button = self.driver.find_element(
+                By.CSS_SELECTOR, 'div[data-testid="like"]'
+            )
+            self.dislike_button = self.driver.find_element(
+                By.CSS_SELECTOR, 'div[data-testid="dislike"]'
+            )
             return True
         except Exception as e:
             return False
@@ -101,6 +96,18 @@ class Autolike_vk:
         except:
             return False
         
+    def _check_word_in_description(self, word):
+        try:
+            description = self._get_description()
+            for div_element in description:
+                div_html = (str(div_element.get_attribute("outerHTML")) + "\n")
+                if word in div_html:
+                    return True
+            return False
+        except:
+            return False
+
+
     def _is_verified(self):
         try:
             if self.driver.find_element(By.CSS_SELECTOR, 'svg[data-testid="verification-icon"]'):
@@ -109,28 +116,30 @@ class Autolike_vk:
         except:
            return False
 
+
     def _is_decription(self):
         try:
-            description_temp = self.driver.find_element(
-                    By.CSS_SELECTOR, 'div[aria-labelledby="/"]'
-                ).find_elements(
-                    By.CSS_SELECTOR, '.vkuiCustomScrollView'
-                )[1].find_elements(
-                    By.TAG_NAME, 'section'
-                )[0].find_elements(
-                     By.TAG_NAME, 'div'
-                )
-            
+            description_temp = self._get_description()
             if self._check_quote(description_temp) == True:
                 return True
             return False
-        
         except Exception as e:
             print(f"Ошибка описания: \n{e}")
             self._open_website()
             
-    def _get_photo_count(self):
+    def _get_description(self):
+        description = self.driver.find_element(
+                By.CSS_SELECTOR, 'div[aria-labelledby="/"]'
+            ).find_elements(
+                By.CSS_SELECTOR, '.vkuiCustomScrollView'
+            )[1].find_elements(
+                By.TAG_NAME, 'section'
+            )[0].find_elements(
+                    By.TAG_NAME, 'div'
+            )
+        return description
 
+    def _get_photo_count(self):
         self.photo_list = self.driver.find_element(
             By.CSS_SELECTOR, 'div[data-testid="current-card"]'
         ).find_elements(
@@ -141,37 +150,40 @@ class Autolike_vk:
              By.TAG_NAME, "div"
         )[1]
 
-       # Находим элемент с определенным стилем translate3d(100%, 0px, 0px)
-        target_element = self.photo_list.find_element(By.XPATH, "//div[@style='transform: translate3d(100%, 0px, 0px);']")
+        soup = BeautifulSoup(self.photo_list.get_attribute('outerHTML'), 'html.parser')
 
-        # Получаем родительский элемент, который содержит все три div
-        parent_element = target_element.find_element(By.XPATH, "./ancestor::div[1]")
+        # Поиск всех элементов div, которые содержат элемент div с классом tjohQFx5
+        target_div = soup.find_all('div')[6]  # это 7-й div в исходном html-коде
 
-        # Найдём весь блок, содержащий нужные элементы
-        desired_block = parent_element.find_element(By.XPATH, "./parent::div/parent::div")
+        # Извлекаем нужные дочерние элементы
+        nested_divs = target_div.find_all('div')[2].find_all('div', recursive=False)
+
+        for i, div in enumerate(nested_divs, start=1):
+            print(f"{i}) {div.prettify()}")
+
+        # Вывод количества найденных блоков
 
         # f = open('test.html', 'w')
-        # f.write(desired_block.get_attribute('outerHTML'))
+        # f.write(self.photo_list.get_attribute('outerHTML'))
         # f.close()
-        # exit()
+        exit()
         # ).find_elements(
         #     By.TAG_NAME, 'div'
         # )[0][0][1][2][0][0][0]
         # print(self.photo_list)
             
-
-
     def _use_like_ruleset(self):
         if self._is_verified() == True or self._is_decription() == True:
+            self.like_button.click()
+            self._update_stats("like")
+        elif self._check_word_in_description("Friends") == False:
             self.like_button.click()
             self._update_stats("like")
         else:
             self.dislike_button.click()
             self._update_stats("dislike")
 
-
     def _update_stats(self, action, json_file=None):
-
         if json_file is None:
             json_file = self.JSON_FILE
             
@@ -203,13 +215,11 @@ class Autolike_vk:
         WebDriverWait(self.driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "iframe"))
         )
-
         sleep(3)
         iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
         self.driver.switch_to.frame(iframes[1])
         sleep(3)
     
-
     def _bot(self):
         while True:
             try:
@@ -221,7 +231,6 @@ class Autolike_vk:
 
                 self._use_like_ruleset()
                 sleep(random.randint(3, 15))
-
 
             except Exception as e:
                 sleep(5)
